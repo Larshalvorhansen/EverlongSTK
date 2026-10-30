@@ -22,7 +22,10 @@ EXAMPLE = Path(__file__).resolve().parents[1] / "examples" / "generic_cubesat.js
 
 @pytest.fixture
 def raw():
-    return json.loads(EXAMPLE.read_text(encoding="utf-8"))
+    value = json.loads(EXAMPLE.read_text(encoding="utf-8"))
+    value["transitions"] = []
+    value["control"] = json.loads((Path(__file__).parent / "fixtures/block_control.json").read_text())
+    return value
 
 
 def mutate(raw, *path, value):
@@ -41,20 +44,20 @@ def check_invalid(raw, *path, error):
 
 def test_example_is_valid_and_representative():
     config = load_configuration(EXAMPLE)
-    assert config.schema_version == "0.2"
+    assert config.schema_version == 1
     assert len(config.modes) == 4
     assert {m.id for m in config.modes} == {"a", "b", "c", "d"}
     assert len(config.components) == 8
     assert config.defaults.initial_mode_id == "a"
-    assert config.control.type == "blocks"
+    assert config.control.type == "none"
     assert config.components[2].producer.destination_queue_id == "raw"
     assert config.components[3].processor.output_input_ratio.value == 0.25
-    assert config.components[4].mode_values["d"].downlink_bps.value == 1_000_000
+    assert config.components[4].mode_values["c"].downlink_bps.value == 1_000_000
     assert config.components[5].mode_values["b"].generation_w.value == 6
     assert config.components[6].battery.initial_energy_wh.value == 32
     assert config.components[7].storage.usable_bytes.value == 1_000_000_000
     assert config.ground_stations[0].minimum_elevation_deg.value == 10
-    assert config.control.rules[1].condition.children[1].queue_id == "processed"
+    assert config.transitions[0].target_state_id == "d"
 
 
 def test_exact_round_trip_input_and_resolved_data(tmp_path, raw):
@@ -91,23 +94,17 @@ def test_explicit_zero_is_not_a_default(raw):
     assert camera_a.data_generation_bytes_per_s.value == 0
     assert camera_a.data_generation_bytes_per_s.is_default is False
     assert camera_c.data_generation_bytes_per_s.value == 0
-    assert camera_c.data_generation_bytes_per_s.is_default is True
-    assert "components[2].mode_values.c.data_generation_bytes_per_s" in config.defaults_applied
+    assert camera_c.data_generation_bytes_per_s.is_default is False
+    assert "components[2].mode_values.c.data_generation_bytes_per_s" not in config.defaults_applied
     assert "components[2].mode_values.a.data_generation_bytes_per_s" not in config.defaults_applied
     assert config.components[7].storage.initial_queue_bytes["raw"].value == 0
     assert config.components[7].storage.initial_queue_bytes["raw"].is_default is False
 
 
-def test_missing_entire_mode_entry_zeroes_independently(raw):
+def test_missing_entire_mode_entry_is_required(raw):
     del raw["components"][2]["mode_values"]["b"]
-    config = validate_configuration(raw)
-    camera = config.components[2].mode_values
-    assert camera["b"].active is False
-    assert camera["b"].active_power_w.value == 0
-    assert camera["b"].data_generation_bytes_per_s.value == 0
-    assert camera["b"].data_generation_bytes_per_s.is_default
-    assert camera["c"].idle_power_w.value == 0.1
-    assert "components[2].mode_values.b" in config.defaults_applied
+    with pytest.raises(ConfigurationError, match="mode_values.b: required"):
+        validate_configuration(raw)
 
 
 def test_circular_orbit_resolves_advanced_elements(raw):
@@ -174,7 +171,7 @@ def test_unknown_fields_rejected_not_dropped(raw):
 
 
 def test_duplicate_ids_and_duplicate_json_keys(raw, tmp_path):
-    raw["modes"][1]["id"] = "a"
+    raw["states"][1]["id"] = "a"
     with pytest.raises(ConfigurationError, match="duplicate ID"):
         validate_configuration(raw)
     path = tmp_path / "duplicate.json"
@@ -207,7 +204,7 @@ def test_total_initial_queue_volume_cannot_exceed_capacity(raw):
 
 
 def test_mode_rename_preserves_references(raw):
-    raw["modes"][1]["label"] = "New label: photography"
+    raw["states"][1]["label"] = "New label: photography"
     config = validate_configuration(raw)
     assert config.modes[1].label == "New label: photography"
     assert config.control.rules[3].actions.mode_id == "b"
@@ -229,7 +226,7 @@ def test_missing_capability_for_mode_value_is_invalid(raw):
 def test_only_one_physical_storage_and_battery(raw):
     raw["components"].append(copy.deepcopy(raw["components"][7]))
     raw["components"][-1]["id"] = "storage2"
-    with pytest.raises(ConfigurationError, match="at most one storage"):
+    with pytest.raises(ConfigurationError, match="exactly one storage"):
         validate_configuration(raw)
 
 
@@ -323,22 +320,17 @@ def test_unrecognized_schema_versions_rejected(raw):
 
 
 def test_per_mode_current_draws_are_unit_checked_and_round_trip(tmp_path, raw):
-    raw["components"][0]["mode_values"]["a"]["active_current_a"] = {
+    raw["components"][0]["mode_values"]["a"]["current_a"] = {
         "value": 0.25, "unit": "A", "certainty": "tested", "source": "bench test"
     }
-    raw["components"][0]["mode_values"]["a"]["idle_current_a"] = {
-        "value": 0, "unit": "A", "certainty": "specified"
-    }
     result = validate_configuration(raw)
-    active = result.components[0].mode_values["a"].active_current_a
+    active = result.components[0].mode_values["a"].current_a
     assert active.value == 0.25 and active.certainty == "tested"
-    assert result.components[0].mode_values["a"].idle_current_a.value == 0
-    assert not result.components[0].mode_values["a"].idle_current_a.is_default
-    assert result.components[0].mode_values["b"].active_current_a.is_default
+    assert result.components[0].mode_values["a"].nominal_load_w == 1.25
     path = tmp_path / "with_current.json"
     save_configuration(result, path)
     assert load_configuration(path).original == raw
-    raw["components"][0]["mode_values"]["a"]["active_current_a"]["unit"] = "mA"
+    raw["components"][0]["mode_values"]["a"]["current_a"]["unit"] = "mA"
     with pytest.raises(ConfigurationError, match="canonical unit"):
         validate_configuration(raw)
 

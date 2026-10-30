@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from datetime import datetime
 from types import MappingProxyType
 from typing import Any
 
@@ -59,6 +60,13 @@ class Mode:
     id: str
     label: str
     default_pointing: str = "sun"
+    description: str = ""
+    diagram_x: float = 0.0
+    diagram_y: float = 0.0
+
+    @property
+    def name(self) -> str:
+        return self.label
 
 
 @dataclass(frozen=True)
@@ -71,6 +79,7 @@ class LoadCapability:
 @dataclass(frozen=True)
 class GeneratorCapability:
     sunlight_dependent: bool = True
+    enabled: bool = True
 
 
 @dataclass(frozen=True)
@@ -113,6 +122,9 @@ class RadioCapability:
 class ModeValues:
     """Resolved values; ``None`` means capability not present, not defaulted."""
 
+    current_a: Parameter | None = None
+    nominal_load_w: float = 0.0
+    nominal_generation_w: float = 0.0
     active: bool | None = None
     idle_power_w: Parameter | None = None
     active_power_w: Parameter | None = None
@@ -138,6 +150,7 @@ class Component:
     processor: ProcessorCapability | None = None
     storage: StorageCapability | None = None
     radio: RadioCapability | None = None
+    type: str = "custom"
 
 
 @dataclass(frozen=True)
@@ -234,7 +247,7 @@ class ControlConfig:
 
 @dataclass(frozen=True)
 class ResolvedConfiguration:
-    schema_version: str
+    schema_version: int
     project: ProjectInfo
     simulation: SimulationConfig
     orbit: OrbitalElements
@@ -245,8 +258,14 @@ class ResolvedConfiguration:
     control: ControlConfig
     defaults: Defaults
     defaults_applied: tuple[str, ...] = ()
+    electrical_bus_voltage_v: Parameter | None = None
+    transitions: tuple[TransitionDefinition, ...] = ()
     # Original dictionary is retained to allow unmodified, lossless save/reload.
     original: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
+
+    @property
+    def states(self) -> tuple[Mode, ...]:
+        return self.modes
 
 
 @dataclass(frozen=True)
@@ -294,3 +313,131 @@ class Status:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "queue_bytes", MappingProxyType(dict(self.queue_bytes)))
+
+
+@dataclass(frozen=True)
+class TransitionDefinition:
+    """Ordered transition data only; priority ties use declaration order."""
+
+    id: str
+    source_state_id: str
+    target_state_id: str
+    condition: Condition
+    priority: int = 0
+    minimum_dwell_seconds: Parameter = field(
+        default_factory=lambda: Parameter(0, "s", is_default=True)
+    )
+
+
+@dataclass(frozen=True)
+class ValidationIssue:
+    path: str
+    message: str
+    severity: str = "error"
+
+
+# State/mode terminology is unified without duplicating configuration objects.
+ProjectConfig = ResolvedConfiguration
+ResolvedProjectConfig = ResolvedConfiguration
+StateDefinition = Mode
+ComponentConfig = Component
+OrbitConfig = OrbitalElements
+GroundStationConfig = GroundStation
+@dataclass(frozen=True)
+class ActionRequest:
+    """Controller request; omitted fields preserve current overrides."""
+
+    state_id: str | None = None
+    pointing: str | None = None
+    processing_enabled: bool | None = None
+    downlink_enabled: bool | None = None
+    reset_overrides: bool = False
+    delete_requests: tuple[DeleteRequest, ...] = ()
+
+
+@dataclass(frozen=True)
+class SatelliteSnapshot:
+    time_utc: datetime
+    elapsed_seconds: float
+    state_id: str
+    seconds_in_state: float
+    battery_energy_wh: float
+    queue_bytes: Mapping[str, float]
+    transmitted_total_bytes: float
+    rejected_total_bytes: float
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "queue_bytes", MappingProxyType(dict(self.queue_bytes)))
+
+
+@dataclass(frozen=True)
+class EnvironmentSnapshot:
+    time_utc: datetime
+    position_eci_m: tuple[float, float, float]
+    latitude_deg: float
+    longitude_deg: float
+    altitude_m: float
+    in_eclipse: bool
+    visible_station_ids: tuple[str, ...]
+    selected_station_id: str | None
+    available_downlink_bps: float
+
+
+@dataclass(frozen=True)
+class PowerLedger:
+    """Interval-integrated bus energies in Wh, keyed by stable component ID.
+
+    Battery change is positive for stored energy gain. Losses are nonnegative.
+    No allocation or integration is performed by this data object.
+    """
+
+    requested_wh: Mapping[str, float]
+    generated_wh: Mapping[str, float]
+    served_wh: Mapping[str, float]
+    curtailed_wh: Mapping[str, float]
+    battery_change_wh: float
+    losses_wh: float
+
+    def __post_init__(self) -> None:
+        for name in ("requested_wh", "generated_wh", "served_wh", "curtailed_wh"):
+            object.__setattr__(self, name, MappingProxyType(dict(getattr(self, name))))
+
+
+@dataclass(frozen=True)
+class DataLedger:
+    """Interval byte flows and ending occupancy, each keyed by queue ID.
+
+    Processed input and output are separate to expose compression/retention.
+    Rejected bytes are excluded from accepted bytes and onboard occupancy.
+    """
+
+    generated_bytes: Mapping[str, float]
+    accepted_bytes: Mapping[str, float]
+    rejected_bytes: Mapping[str, float]
+    processed_input_bytes: Mapping[str, float]
+    processed_output_bytes: Mapping[str, float]
+    transmitted_bytes: Mapping[str, float]
+    deleted_bytes: Mapping[str, float]
+    ending_queue_bytes: Mapping[str, float]
+
+    def __post_init__(self) -> None:
+        for name in self.__dataclass_fields__:
+            object.__setattr__(self, name, MappingProxyType(dict(getattr(self, name))))
+
+
+@dataclass(frozen=True)
+class SimulationEvent:
+    time_utc: datetime
+    elapsed_seconds: float
+    category: str
+    explanation: str
+    component_id: str | None = None
+    queue_id: str | None = None
+
+
+@dataclass(frozen=True)
+class IntervalResult:
+    next_snapshot: SatelliteSnapshot
+    power_ledger: PowerLedger
+    data_ledger: DataLedger
+    events: tuple[SimulationEvent, ...]

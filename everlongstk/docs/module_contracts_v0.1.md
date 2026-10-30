@@ -7,6 +7,10 @@
 **GUI:** PySide6 / Qt Widgets  
 **Development environment:** Nix flake in the Git repository
 
+Task 001 executable schema and model choices are proposed for review in
+[001_contract_notes.md](tasks/001_contract_notes.md); the complete example is
+`examples/generic_cubesat.json`. This does not mark the integration freeze approved.
+
 ## 0. Authority, inputs, and scope
 
 This document turns the proposed *EverlongSTK Specification v0.2* and the latest *EverlongSTK HTML mockup* into explicit module interfaces and acceptance criteria. Both are included under `docs/reference/` in the starter repository.

@@ -1,8 +1,8 @@
 """Strict, lossless JSON project I/O and explicit default resolution.
 
 Canonical units are exact strings; no implicit unit conversions are performed.
-Missing optional operational inputs default to zero independently for *each*
-mode, rather than inheriting values from an adjacent mode.  ``original`` is
+Required signed currents and producer rates must be explicit for every state.
+Only optional advanced inputs receive documented, visible defaults.  ``original`` is
 kept unchanged for lossless saves, while ``resolved_to_dict`` exposes every
 applied default and the derived circular-orbit elements.
 """
@@ -10,6 +10,7 @@ applied default and the derived circular-orbit elements.
 from __future__ import annotations
 
 import copy
+import csv
 import json
 import math
 import re
@@ -38,15 +39,19 @@ from everlong_stk.models import (
     Parameter,
     ProcessorCapability,
     ProducerCapability,
+    ProjectConfig,
     ProjectInfo,
     RadioCapability,
     ResolvedConfiguration,
+    ResolvedProjectConfig,
     ScheduleInterval,
     SimulationConfig,
     StorageCapability,
+    TransitionDefinition,
+    ValidationIssue,
 )
 
-SCHEMA_VERSION = "0.2"
+SCHEMA_VERSION = 1
 # WGS-84 equatorial radius, used only to resolve the convenience circular form.
 EARTH_EQUATORIAL_RADIUS_M = 6_378_137.0
 CERTAINTIES = {"guesstimate", "calculated_estimate", "specified", "tested"}
@@ -291,9 +296,10 @@ def _defaults(reader: _Reader, raw: Any, mode_ids: set[str], queue_ids: set[str]
 
 def _component(
     reader: _Reader, raw: Any, index: int, mode_ids: set[str], defaults: Defaults,
+    bus_voltage_v: Parameter,
 ) -> Component:
     path = f"components[{index}]"
-    obj = reader.mapping(raw, path, {"id", "name", "mass_kg", "capabilities", "mode_values"})
+    obj = reader.mapping(raw, path, {"id", "name", "type", "mass_kg", "capabilities", "mode_values"})
     ident = reader.ident(reader.required(obj, "id", path), f"{path}.id")
     name = reader.string(reader.required(obj, "name", path), f"{path}.name")
     mass = reader.param(reader.required(obj, "mass_kg", path), f"{path}.mass_kg", "kg", minimum=0)
@@ -313,10 +319,11 @@ def _component(
         )
     if "generator" in caps:
         p = f"{cp}.generator"
-        c = reader.mapping(caps["generator"], p, {"sunlight_dependent"})
+        c = reader.mapping(caps["generator"], p, {"sunlight_dependent", "enabled"})
         parsed["generator"] = GeneratorCapability(
             reader.boolean(reader.optional(c, "sunlight_dependent", True, p),
-                           f"{p}.sunlight_dependent")
+                           f"{p}.sunlight_dependent"),
+            reader.boolean(reader.optional(c, "enabled", True, p), f"{p}.enabled"),
         )
     if "battery" in caps:
         p = f"{cp}.battery"
@@ -365,7 +372,7 @@ def _component(
         p = f"{cp}.storage"
         c = reader.mapping(caps["storage"], p, {"usable_bytes", "initial_queue_bytes"})
         capacity = reader.param(reader.required(c, "usable_bytes", p),
-                                f"{p}.usable_bytes", "byte", minimum=0)
+                                f"{p}.usable_bytes", "byte", minimum=0, strict_minimum=True)
         initials = reader.mapping(reader.optional(c, "initial_queue_bytes", {}, p),
                                   f"{p}.initial_queue_bytes", set(defaults_queue_ids(reader)))
         # The allowed-keys check for queue IDs is intentionally deferred until
@@ -392,15 +399,12 @@ def _component(
         if up is not None:
             up = reader.ident(up, f"{p}.uplink_queue_id")
         parsed["radio"] = RadioCapability(station_ids, down, up)
+    component_type = reader.string(reader.required(obj, "type", path), f"{path}.type")
     mv_path = f"{path}.mode_values"
-    modes = reader.mapping(reader.optional(obj, "mode_values", {}, path), mv_path, mode_ids)
+    modes = reader.mapping(reader.required(obj, "mode_values", path), mv_path, mode_ids)
     specs: dict[str, tuple[str | None, str, int]] = {
         "active": ("load", "bool", 0),
         "idle_power_w": ("load", "W", 0),
-        "active_power_w": ("load", "W", 0),
-        "idle_current_a": ("load", "A", 0),
-        "active_current_a": ("load", "A", 0),
-        "generation_w": ("generator", "W", 0),
         "data_generation_bytes_per_s": ("producer", "byte/s", 0),
         "processing_input_bytes_per_s": ("processor", "byte/s", 0),
         "downlink_bps": ("radio", "bit/s", 0),
@@ -409,16 +413,31 @@ def _component(
     mode_values = {}
     for mid in sorted(mode_ids):
         mp = f"{mv_path}.{mid}"
-        if mid not in modes:
-            reader.default(mp)
-        values = reader.mapping(modes.get(mid, {}), mp, set(specs))
-        fields: dict[str, Any] = {}
+        values = reader.mapping(reader.required(modes, mid, mv_path), mp, set(specs) | {"current_a"})
+        current = reader.param(reader.required(values, "current_a", mp), f"{mp}.current_a", "A")
+        if current.value < 0 and ("generator" not in parsed or not parsed["generator"].enabled):
+            raise ConfigurationError(f"{mp}.current_a: negative current requires generator capability enabled")
+        power = bus_voltage_v.value * current.value
+        if not math.isfinite(power):
+            raise ConfigurationError(f"{mp}.current_a: derived power must be finite")
+        fields: dict[str, Any] = {
+            "current_a": current,
+            "nominal_load_w": max(power, 0),
+            "nominal_generation_w": max(-power, 0),
+        }
+        if "load" in parsed:
+            fields["active_power_w"] = Parameter(max(power, 0), "W", "calculated_estimate",
+                                                note="bus voltage × signed current; positive load")
+        if "generator" in parsed:
+            fields["generation_w"] = Parameter(max(-power, 0), "W", "calculated_estimate",
+                                              note="bus voltage × signed current; negative generation")
         for key, (capability, unit, default) in specs.items():
             if capability not in parsed:
                 if key in values:
                     raise ConfigurationError(f"{mp}.{key}: requires {capability} capability")
                 continue
-            v = values.get(key, _MISSING)
+            v = (reader.required(values, key, mp) if key == "data_generation_bytes_per_s"
+                 else values.get(key, _MISSING))
             if unit == "bool":
                 if v is _MISSING:
                     reader.default(f"{mp}.{key}")
@@ -427,7 +446,7 @@ def _component(
             else:
                 fields[key] = reader.param(v, f"{mp}.{key}", unit, default=default, minimum=0)
         mode_values[mid] = ModeValues(**fields)
-    return Component(ident, name, mass, mode_values, **parsed)
+    return Component(ident, name, mass, mode_values, type=component_type, **parsed)
 
 
 def defaults_queue_ids(reader: _Reader) -> set[str]:
@@ -673,10 +692,10 @@ def validate_configuration(raw: dict[str, Any]) -> ResolvedConfiguration:
     """
     reader = _Reader()
     obj = reader.mapping(raw, "$", {
-        "schema_version", "project", "simulation", "orbit", "modes", "components",
-        "ground_stations", "data_queues", "control", "defaults",
+        "schema_version", "project", "simulation", "orbit", "states", "components",
+        "ground_stations", "data_queues", "control", "defaults", "electrical_bus", "transitions",
     })
-    version = reader.string(reader.required(obj, "schema_version", "$"), "schema_version")
+    version = reader.integer(reader.required(obj, "schema_version", "$"), "schema_version")
     if version != SCHEMA_VERSION:
         raise ConfigurationError(f"schema_version: expected {SCHEMA_VERSION!r}")
     p = reader.mapping(reader.required(obj, "project", "$"), "project",
@@ -702,22 +721,33 @@ def validate_configuration(raw: dict[str, Any]) -> ResolvedConfiguration:
         raise ConfigurationError("simulation.output_interval_s: cannot be less than calculation_step_s")
     simulation = SimulationConfig(epoch, duration, step, output)
     orbit = _orbit(reader, reader.required(obj, "orbit", "$"), simulation)
+    bus = reader.mapping(reader.required(obj, "electrical_bus", "$"), "electrical_bus", {"voltage_v"})
+    bus_voltage = reader.param(reader.required(bus, "voltage_v", "electrical_bus"),
+                               "electrical_bus.voltage_v", "V", minimum=0, strict_minimum=True)
     modes = []
-    for i, raw_mode in enumerate(reader.sequence(reader.required(obj, "modes", "$"), "modes")):
-        path = f"modes[{i}]"
-        m = reader.mapping(raw_mode, path, {"id", "label", "default_pointing"})
+    for i, raw_mode in enumerate(reader.sequence(reader.required(obj, "states", "$"), "states")):
+        path = f"states[{i}]"
+        m = reader.mapping(raw_mode, path, {"id", "label", "default_pointing", "description", "diagram_x", "diagram_y"})
+        coordinates = []
+        for axis in ("diagram_x", "diagram_y"):
+            coordinate = m.get(axis, 0.0)
+            if type(coordinate) not in (float, int) or not math.isfinite(coordinate):
+                raise ConfigurationError(f"{path}.{axis}: expected finite coordinate")
+            coordinates.append(coordinate)
         mode = Mode(
             reader.ident(reader.required(m, "id", path), f"{path}.id"),
             reader.string(reader.required(m, "label", path), f"{path}.label"),
             reader.string(reader.optional(m, "default_pointing", "sun", path),
                           f"{path}.default_pointing"),
+            reader.string(m.get("description", ""), f"{path}.description", nonempty=False),
+            *coordinates,
         )
         if mode.default_pointing not in POINTINGS:
             raise ConfigurationError(f"{path}.default_pointing: invalid pointing")
         modes.append(mode)
     if not modes:
-        raise ConfigurationError("modes: at least one mode required")
-    _unique(modes, "modes")
+        raise ConfigurationError("states: at least one mode required")
+    _unique(modes, "states")
     mode_ids = {m.id for m in modes}
     raw_queues = reader.optional(obj, "data_queues", [
         {"id": "raw", "label": "Raw"}, {"id": "processed", "label": "Processed"},
@@ -736,13 +766,13 @@ def validate_configuration(raw: dict[str, Any]) -> ResolvedConfiguration:
     reader.queue_ids = queue_ids
     defaults = _defaults(reader, reader.required(obj, "defaults", "$"), mode_ids, queue_ids)
     components = [
-        _component(reader, item, i, mode_ids, defaults)
+        _component(reader, item, i, mode_ids, defaults, bus_voltage)
         for i, item in enumerate(reader.sequence(reader.required(obj, "components", "$"), "components"))
     ]
     _unique(components, "components")
     for key in ("battery", "storage"):
-        if sum(getattr(c, key) is not None for c in components) > 1:
-            raise ConfigurationError(f"components: at most one {key} capability is supported")
+        if sum(getattr(c, key) is not None for c in components) != 1:
+            raise ConfigurationError(f"components: exactly one {key} capability is supported")
     stations = [
         _station(reader, item, i)
         for i, item in enumerate(reader.sequence(reader.optional(obj, "ground_stations", [], "$"),
@@ -774,10 +804,30 @@ def validate_configuration(raw: dict[str, Any]) -> ResolvedConfiguration:
             _reference(radio, radio_ids, f"ground_stations[{s.id}].supported_radio_ids")
     control = _control(reader, reader.optional(obj, "control", {"type": "none"}, "$"),
                        mode_ids, queue_ids)
+    transitions = []
+    for i, value in enumerate(reader.sequence(obj.get("transitions", []), "transitions")):
+        path = f"transitions[{i}]"
+        t = reader.mapping(value, path, {"id", "source_state_id", "target_state_id", "condition",
+                                         "priority", "minimum_dwell_seconds"})
+        ident = reader.ident(reader.required(t, "id", path), f"{path}.id")
+        refs = []
+        for key in ("source_state_id", "target_state_id"):
+            ref = reader.ident(reader.required(t, key, path), f"{path}.{key}")
+            _reference(ref, mode_ids, f"{path}.{key}")
+            refs.append(ref)
+        transitions.append(TransitionDefinition(
+            ident, *refs,
+            _condition(reader, reader.required(t, "condition", path), f"{path}.condition",
+                       mode_ids, queue_ids),
+            reader.integer(t.get("priority", 0), f"{path}.priority"),
+            reader.param(t.get("minimum_dwell_seconds", _MISSING),
+                         f"{path}.minimum_dwell_seconds", "s", default=0, minimum=0),
+        ))
+    _unique(transitions, "transitions")
     return ResolvedConfiguration(
         version, project, simulation, orbit, tuple(modes), tuple(components),
         tuple(stations), tuple(queues), control, defaults,
-        tuple(reader.defaults_applied), copy.deepcopy(raw),
+        tuple(reader.defaults_applied), bus_voltage, tuple(transitions), copy.deepcopy(raw),
     )
 
 
@@ -831,3 +881,181 @@ def save_configuration(
         validate_configuration(raw)
     content = json.dumps(raw, ensure_ascii=False, allow_nan=False, indent=2) + "\n"
     Path(path).write_text(content, encoding="utf-8")
+
+
+def _input_document(config: ResolvedConfiguration) -> dict[str, Any]:
+    """Serialize current typed values, retaining the original form when unchanged."""
+    original_config = None
+    if config.original:
+        try:
+            original_config = validate_configuration(config.original)
+            if original_config == config:
+                return copy.deepcopy(config.original)
+        except ConfigurationError:
+            pass
+
+    def encode(value: Any) -> Any:
+        from dataclasses import fields, is_dataclass
+
+        if isinstance(value, Condition):
+            if value.kind in {"all", "any"}:
+                return {value.kind: [encode(c) for c in value.children]}
+            if value.kind == "not":
+                return {"not": encode(value.children[0])}
+            return {key: encode(item) for key, item in {
+                "field": value.field, "op": value.op, "value": value.value,
+                "queue_id": value.queue_id,
+            }.items() if item is not None}
+        if is_dataclass(value):
+            return {f.name: encode(getattr(value, f.name)) for f in fields(value)
+                    if getattr(value, f.name) is not None}
+        if isinstance(value, dict):
+            return {key: encode(item) for key, item in value.items()}
+        if isinstance(value, (tuple, list)):
+            return [encode(item) for item in value]
+        return value
+
+    control = encode(config.control)
+    control_fields = {
+        "none": {"type"}, "python": {"type", "script_path", "script_source"},
+        "schedule": {"type", "intervals", "fallback"}, "blocks": {"type", "rules", "fallback"},
+    }
+    control = {key: value for key, value in control.items()
+               if key in control_fields.get(config.control.type, {"type"})}
+    components = []
+    for component in config.components:
+        caps = {name: encode(getattr(component, name)) for name in (
+            "load", "generator", "battery", "producer", "processor", "storage", "radio"
+        ) if getattr(component, name) is not None}
+        values = {}
+        for state_id, state in component.mode_values.items():
+            values[state_id] = {key: item for key, item in encode(state).items() if key not in {
+                "active_power_w", "active_current_a", "idle_current_a", "generation_w", "nominal_load_w",
+                "nominal_generation_w",
+            }}
+        components.append({
+            "id": component.id, "name": component.name, "type": component.type,
+            "mass_kg": encode(component.mass_kg), "capabilities": caps, "mode_values": values,
+        })
+    document = {
+        "schema_version": config.schema_version, "project": encode(config.project),
+        "simulation": encode(config.simulation), "orbit": encode(config.orbit),
+        "states": encode(config.states), "components": components,
+        "ground_stations": encode(config.ground_stations), "data_queues": encode(config.data_queues),
+        "defaults": encode(config.defaults), "control": control,
+        "electrical_bus": {"voltage_v": encode(config.electrical_bus_voltage_v)},
+        "transitions": encode(config.transitions),
+    }
+
+    if original_config is None:
+        return document
+    # Compare normalized models but update only changed input fields. This keeps
+    # unrelated omitted defaults and the original circular-orbit provenance intact.
+    from dataclasses import replace
+
+    baseline = _input_document(replace(original_config, original={}))
+
+    def merge(original: Any, before: Any, after: Any) -> Any:
+        if before == after:
+            return copy.deepcopy(original)
+        if isinstance(before, dict) and isinstance(after, dict):
+            result = copy.deepcopy(original) if isinstance(original, dict) else {}
+            for key in before.keys() | after.keys():
+                if key not in after:
+                    result.pop(key, None)
+                elif before.get(key, _MISSING) != after[key]:
+                    result[key] = merge(result.get(key), before.get(key), after[key])
+            return result
+        if isinstance(before, list) and isinstance(after, list) and len(before) == len(after):
+            if isinstance(original, list) and len(original) == len(before):
+                return [merge(o, b, a) for o, b, a in zip(original, before, after, strict=True)]
+        return copy.deepcopy(after)
+
+    result = merge(config.original, baseline, document)
+    # Changing orbital size/eccentricity switches the circular convenience form
+    # to explicit elements; changing an unrelated field leaves the form intact.
+    if "circular_altitude_m" in result["orbit"] and any(
+        baseline["orbit"][key] != document["orbit"][key]
+        for key in ("semi_major_axis_m", "eccentricity")
+    ):
+        result["orbit"].pop("circular_altitude_m")
+        for key in ("semi_major_axis_m", "eccentricity"):
+            result["orbit"][key] = document["orbit"][key]
+    return result
+
+
+def load_project(path: Path) -> ProjectConfig:
+    """Load and validate a project; invalid JSON/configuration raises ConfigurationError."""
+    return load_configuration(path)
+
+
+def validate_project(config: ProjectConfig | dict[str, Any]) -> tuple[ValidationIssue, ...]:
+    """Report the first authoritative error with its input path; never mutate inputs.
+
+    Dictionaries allow validation of incomplete editor drafts. Typed configurations
+    are reserialized so edits cannot be hidden by a stale original JSON document.
+    """
+    try:
+        resolve_project(config)
+    except ConfigurationError as exc:
+        path, _, message = str(exc).partition(": ")
+        return (ValidationIssue(path, message or str(exc)),)
+    return ()
+
+
+def resolve_project(config: ProjectConfig | dict[str, Any]) -> ResolvedProjectConfig:
+    """Resolve defaults and nominal bus power in a fresh configuration."""
+    raw = _input_document(config) if isinstance(config, ResolvedConfiguration) else config
+    return validate_configuration(raw)
+
+
+def save_project(path: Path, config: ProjectConfig | dict[str, Any]) -> None:
+    """Validate and save current project values with provenance and explicit zeros."""
+    resolved = resolve_project(config)
+    save_configuration(resolved, path)
+
+
+def export_component_table(config: ProjectConfig, target_csv: Path) -> None:
+    """Write one row per component. State IDs in headers remain stable on rename."""
+    config = resolve_project(config)
+    headers = [
+        "row_number", "id", "name", "type", "mass_kg", "battery_relevant",
+        "battery_capacity_Wh", "battery_initial_energy_Wh", "data_capacity_relevant",
+        "storage_capacity_bytes", "generates_data", "ground_link_relevant", "generator",
+        "station_ids", "downlink_queue_id", "uplink_queue_id",
+        "station_minimum_elevation_deg",
+    ]
+    for state in config.states:
+        headers.extend(f"state[{state.id}].{field}" for field in (
+            "label", "current_A", "data_generation_bytes_per_s", "downlink_bits_per_s",
+            "uplink_bits_per_s",
+        ))
+    station_by_id = {station.id: station for station in config.ground_stations}
+    rows = []
+    for index, component in enumerate(config.components, 1):
+        radio = component.radio
+        row = [
+            index, component.id, component.name, component.type, component.mass_kg.value,
+            component.battery is not None,
+            component.battery.capacity_wh.value if component.battery else "",
+            component.battery.initial_energy_wh.value if component.battery else "",
+            component.storage is not None,
+            component.storage.usable_bytes.value if component.storage else "",
+            component.producer is not None, radio is not None, component.generator is not None,
+            ";".join(radio.supported_station_ids) if radio else "",
+            radio.downlink_queue_id if radio else "", radio.uplink_queue_id or "" if radio else "",
+            ";".join(f"{sid}:{station_by_id[sid].minimum_elevation_deg.value}"
+                     for sid in radio.supported_station_ids) if radio else "",
+        ]
+        for state in config.states:
+            values = component.mode_values[state.id]
+            row.extend((state.label, values.current_a.value,
+                        values.data_generation_bytes_per_s.value
+                        if values.data_generation_bytes_per_s is not None else "",
+                        values.downlink_bps.value if values.downlink_bps is not None else "",
+                        values.uplink_bps.value if values.uplink_bps is not None else ""))
+        rows.append(row)
+    with Path(target_csv).open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.writer(stream)
+        writer.writerow(headers)
+        writer.writerows(rows)

@@ -1,5 +1,5 @@
 {
-  "schema_version": "0.2",
+  "schema_version": 1,
   "project": {
     "id": "generic_cubesat",
     "title": "Generic CubeSat",
@@ -60,28 +60,6 @@
     "propagator": "kepler_j2",
     "frame": "ECI_J2000"
   },
-  "modes": [
-    {
-      "id": "a",
-      "label": "A / Idle",
-      "default_pointing": "sun"
-    },
-    {
-      "id": "b",
-      "label": "B / Imaging",
-      "default_pointing": "nadir"
-    },
-    {
-      "id": "c",
-      "label": "C / Processing",
-      "default_pointing": "sun"
-    },
-    {
-      "id": "d",
-      "label": "D / Downlink",
-      "default_pointing": "ground_station"
-    }
-  ],
   "data_queues": [
     {
       "id": "raw",
@@ -161,41 +139,42 @@
       "mode_values": {
         "a": {
           "active": true,
-          "active_power_w": {
-            "value": 2,
-            "unit": "W",
+          "current_a": {
+            "value": 0.4,
+            "unit": "A",
             "certainty": "guesstimate",
-            "note": "Synthetic illustrative CubeSat input, not a hardware specification"
+            "note": "Synthetic illustrative input; not a hardware specification"
           }
         },
         "b": {
           "active": true,
-          "active_power_w": {
-            "value": 2,
-            "unit": "W",
+          "current_a": {
+            "value": 0.4,
+            "unit": "A",
             "certainty": "guesstimate",
-            "note": "Synthetic illustrative CubeSat input, not a hardware specification"
+            "note": "Synthetic illustrative input; not a hardware specification"
           }
         },
         "c": {
           "active": true,
-          "active_power_w": {
-            "value": 2,
-            "unit": "W",
+          "current_a": {
+            "value": 0.4,
+            "unit": "A",
             "certainty": "guesstimate",
-            "note": "Synthetic illustrative CubeSat input, not a hardware specification"
+            "note": "Synthetic illustrative input; not a hardware specification"
           }
         },
         "d": {
           "active": true,
-          "active_power_w": {
-            "value": 2,
-            "unit": "W",
+          "current_a": {
+            "value": 0.4,
+            "unit": "A",
             "certainty": "guesstimate",
-            "note": "Synthetic illustrative CubeSat input, not a hardware specification"
+            "note": "Synthetic illustrative input; not a hardware specification"
           }
         }
-      }
+      },
+      "type": "platform"
     },
     {
       "id": "adcs",
@@ -214,41 +193,42 @@
       "mode_values": {
         "a": {
           "active": true,
-          "active_power_w": {
-            "value": 1,
-            "unit": "W",
+          "current_a": {
+            "value": 0.2,
+            "unit": "A",
             "certainty": "guesstimate",
-            "note": "Synthetic illustrative CubeSat input, not a hardware specification"
+            "note": "Synthetic illustrative input; not a hardware specification"
           }
         },
         "b": {
           "active": true,
-          "active_power_w": {
-            "value": 3,
-            "unit": "W",
+          "current_a": {
+            "value": 0.6,
+            "unit": "A",
             "certainty": "guesstimate",
-            "note": "Synthetic illustrative CubeSat input, not a hardware specification"
+            "note": "Synthetic illustrative input; not a hardware specification"
           }
         },
         "c": {
           "active": true,
-          "active_power_w": {
-            "value": 1,
-            "unit": "W",
+          "current_a": {
+            "value": 0.2,
+            "unit": "A",
             "certainty": "guesstimate",
-            "note": "Synthetic illustrative CubeSat input, not a hardware specification"
+            "note": "Synthetic illustrative input; not a hardware specification"
           }
         },
         "d": {
           "active": true,
-          "active_power_w": {
-            "value": 2,
-            "unit": "W",
+          "current_a": {
+            "value": 0.4,
+            "unit": "A",
             "certainty": "guesstimate",
-            "note": "Synthetic illustrative CubeSat input, not a hardware specification"
+            "note": "Synthetic illustrative input; not a hardware specification"
           }
         }
-      }
+      },
+      "type": "adcs"
     },
     {
       "id": "camera",
@@ -280,16 +260,16 @@
             "unit": "byte/s",
             "certainty": "guesstimate",
             "note": "Synthetic illustrative CubeSat input, not a hardware specification"
+          },
+          "current_a": {
+            "value": 0.0,
+            "unit": "A",
+            "certainty": "guesstimate",
+            "note": "Synthetic illustrative input; not a hardware specification"
           }
         },
         "b": {
           "active": true,
-          "active_power_w": {
-            "value": 5,
-            "unit": "W",
-            "certainty": "guesstimate",
-            "note": "Synthetic illustrative CubeSat input, not a hardware specification"
-          },
           "data_generation_bytes_per_s": {
             "value": 500000,
             "unit": "byte/s",
@@ -301,6 +281,12 @@
             "unit": "W",
             "certainty": "guesstimate",
             "note": "Synthetic illustrative CubeSat input, not a hardware specification"
+          },
+          "current_a": {
+            "value": 1.0,
+            "unit": "A",
+            "certainty": "guesstimate",
+            "note": "Synthetic illustrative input; not a hardware specification"
           }
         },
         "c": {
@@ -309,6 +295,18 @@
             "unit": "W",
             "certainty": "guesstimate",
             "note": "Synthetic illustrative CubeSat input, not a hardware specification"
+          },
+          "current_a": {
+            "value": 0.0,
+            "unit": "A",
+            "certainty": "guesstimate",
+            "note": "Synthetic illustrative input; not a hardware specification"
+          },
+          "data_generation_bytes_per_s": {
+            "value": 0,
+            "unit": "byte/s",
+            "certainty": "guesstimate",
+            "note": "Synthetic illustrative input; not a hardware specification"
           }
         },
         "d": {
@@ -317,9 +315,22 @@
             "unit": "W",
             "certainty": "guesstimate",
             "note": "Synthetic illustrative CubeSat input, not a hardware specification"
+          },
+          "current_a": {
+            "value": 0.0,
+            "unit": "A",
+            "certainty": "guesstimate",
+            "note": "Synthetic illustrative input; not a hardware specification"
+          },
+          "data_generation_bytes_per_s": {
+            "value": 0,
+            "unit": "byte/s",
+            "certainty": "guesstimate",
+            "note": "Synthetic illustrative input; not a hardware specification"
           }
         }
-      }
+      },
+      "type": "camera"
     },
     {
       "id": "processor",
@@ -352,6 +363,12 @@
             "unit": "W",
             "certainty": "guesstimate",
             "note": "Synthetic illustrative CubeSat input, not a hardware specification"
+          },
+          "current_a": {
+            "value": 0.0,
+            "unit": "A",
+            "certainty": "guesstimate",
+            "note": "Synthetic illustrative input; not a hardware specification"
           }
         },
         "b": {
@@ -360,16 +377,16 @@
             "unit": "W",
             "certainty": "guesstimate",
             "note": "Synthetic illustrative CubeSat input, not a hardware specification"
+          },
+          "current_a": {
+            "value": 0.0,
+            "unit": "A",
+            "certainty": "guesstimate",
+            "note": "Synthetic illustrative input; not a hardware specification"
           }
         },
         "c": {
           "active": true,
-          "active_power_w": {
-            "value": 4,
-            "unit": "W",
-            "certainty": "guesstimate",
-            "note": "Synthetic illustrative CubeSat input, not a hardware specification"
-          },
           "idle_power_w": {
             "value": 0.2,
             "unit": "W",
@@ -381,6 +398,12 @@
             "unit": "byte/s",
             "certainty": "guesstimate",
             "note": "Synthetic illustrative CubeSat input, not a hardware specification"
+          },
+          "current_a": {
+            "value": 0.8,
+            "unit": "A",
+            "certainty": "guesstimate",
+            "note": "Synthetic illustrative input; not a hardware specification"
           }
         },
         "d": {
@@ -389,9 +412,16 @@
             "unit": "W",
             "certainty": "guesstimate",
             "note": "Synthetic illustrative CubeSat input, not a hardware specification"
+          },
+          "current_a": {
+            "value": 0.0,
+            "unit": "A",
+            "certainty": "guesstimate",
+            "note": "Synthetic illustrative input; not a hardware specification"
           }
         }
-      }
+      },
+      "type": "processor"
     },
     {
       "id": "radio",
@@ -420,6 +450,12 @@
             "unit": "W",
             "certainty": "guesstimate",
             "note": "Synthetic illustrative CubeSat input, not a hardware specification"
+          },
+          "current_a": {
+            "value": 0.0,
+            "unit": "A",
+            "certainty": "guesstimate",
+            "note": "Synthetic illustrative input; not a hardware specification"
           }
         },
         "b": {
@@ -428,24 +464,16 @@
             "unit": "W",
             "certainty": "guesstimate",
             "note": "Synthetic illustrative CubeSat input, not a hardware specification"
+          },
+          "current_a": {
+            "value": 0.0,
+            "unit": "A",
+            "certainty": "guesstimate",
+            "note": "Synthetic illustrative input; not a hardware specification"
           }
         },
         "c": {
-          "idle_power_w": {
-            "value": 0.2,
-            "unit": "W",
-            "certainty": "guesstimate",
-            "note": "Synthetic illustrative CubeSat input, not a hardware specification"
-          }
-        },
-        "d": {
           "active": true,
-          "active_power_w": {
-            "value": 6,
-            "unit": "W",
-            "certainty": "guesstimate",
-            "note": "Synthetic illustrative CubeSat input, not a hardware specification"
-          },
           "idle_power_w": {
             "value": 0.2,
             "unit": "W",
@@ -463,9 +491,30 @@
             "unit": "bit/s",
             "certainty": "guesstimate",
             "note": "Synthetic illustrative CubeSat input, not a hardware specification"
+          },
+          "current_a": {
+            "value": 1.2,
+            "unit": "A",
+            "certainty": "guesstimate",
+            "note": "Synthetic illustrative input; not a hardware specification"
+          }
+        },
+        "d": {
+          "idle_power_w": {
+            "value": 0.2,
+            "unit": "W",
+            "certainty": "guesstimate",
+            "note": "Synthetic illustrative CubeSat input, not a hardware specification"
+          },
+          "current_a": {
+            "value": 0.0,
+            "unit": "A",
+            "certainty": "guesstimate",
+            "note": "Synthetic illustrative input; not a hardware specification"
           }
         }
-      }
+      },
+      "type": "radio"
     },
     {
       "id": "solar",
@@ -483,38 +532,39 @@
       },
       "mode_values": {
         "a": {
-          "generation_w": {
-            "value": 12,
-            "unit": "W",
+          "current_a": {
+            "value": -2.4,
+            "unit": "A",
             "certainty": "guesstimate",
-            "note": "Synthetic illustrative CubeSat input, not a hardware specification"
+            "note": "Synthetic illustrative input; not a hardware specification"
           }
         },
         "b": {
-          "generation_w": {
-            "value": 6,
-            "unit": "W",
+          "current_a": {
+            "value": -1.2,
+            "unit": "A",
             "certainty": "guesstimate",
-            "note": "Synthetic illustrative CubeSat input, not a hardware specification"
+            "note": "Synthetic illustrative input; not a hardware specification"
           }
         },
         "c": {
-          "generation_w": {
-            "value": 12,
-            "unit": "W",
+          "current_a": {
+            "value": -2.4,
+            "unit": "A",
             "certainty": "guesstimate",
-            "note": "Synthetic illustrative CubeSat input, not a hardware specification"
+            "note": "Synthetic illustrative input; not a hardware specification"
           }
         },
         "d": {
-          "generation_w": {
-            "value": 4,
-            "unit": "W",
+          "current_a": {
+            "value": -0.8,
+            "unit": "A",
             "certainty": "guesstimate",
-            "note": "Synthetic illustrative CubeSat input, not a hardware specification"
+            "note": "Synthetic illustrative input; not a hardware specification"
           }
         }
-      }
+      },
+      "type": "solar"
     },
     {
       "id": "battery",
@@ -565,7 +615,41 @@
           }
         }
       },
-      "mode_values": {}
+      "mode_values": {
+        "a": {
+          "current_a": {
+            "value": 0.0,
+            "unit": "A",
+            "certainty": "guesstimate",
+            "note": "Synthetic illustrative input; not a hardware specification"
+          }
+        },
+        "b": {
+          "current_a": {
+            "value": 0.0,
+            "unit": "A",
+            "certainty": "guesstimate",
+            "note": "Synthetic illustrative input; not a hardware specification"
+          }
+        },
+        "c": {
+          "current_a": {
+            "value": 0.0,
+            "unit": "A",
+            "certainty": "guesstimate",
+            "note": "Synthetic illustrative input; not a hardware specification"
+          }
+        },
+        "d": {
+          "current_a": {
+            "value": 0.0,
+            "unit": "A",
+            "certainty": "guesstimate",
+            "note": "Synthetic illustrative input; not a hardware specification"
+          }
+        }
+      },
+      "type": "battery"
     },
     {
       "id": "storage",
@@ -600,115 +684,92 @@
           }
         }
       },
-      "mode_values": {}
+      "mode_values": {
+        "a": {
+          "current_a": {
+            "value": 0.0,
+            "unit": "A",
+            "certainty": "guesstimate",
+            "note": "Synthetic illustrative input; not a hardware specification"
+          }
+        },
+        "b": {
+          "current_a": {
+            "value": 0.0,
+            "unit": "A",
+            "certainty": "guesstimate",
+            "note": "Synthetic illustrative input; not a hardware specification"
+          }
+        },
+        "c": {
+          "current_a": {
+            "value": 0.0,
+            "unit": "A",
+            "certainty": "guesstimate",
+            "note": "Synthetic illustrative input; not a hardware specification"
+          }
+        },
+        "d": {
+          "current_a": {
+            "value": 0.0,
+            "unit": "A",
+            "certainty": "guesstimate",
+            "note": "Synthetic illustrative input; not a hardware specification"
+          }
+        }
+      },
+      "type": "storage"
     }
   ],
   "control": {
-    "type": "blocks",
-    "rules": [
-      {
-        "condition": {
-          "field": "battery_percent",
-          "op": "<",
-          "value": {
-            "value": 20,
-            "unit": "%",
-            "certainty": "guesstimate",
-            "note": "Synthetic illustrative CubeSat input, not a hardware specification"
-          }
-        },
-        "actions": {
-          "mode_id": "a"
-        }
-      },
-      {
-        "condition": {
-          "all": [
-            {
-              "field": "ground_station_visible",
-              "op": "==",
-              "value": true
-            },
-            {
-              "field": "queue_bytes",
-              "queue_id": "processed",
-              "op": ">",
-              "value": {
-                "value": 0,
-                "unit": "byte",
-                "certainty": "guesstimate",
-                "note": "Synthetic illustrative CubeSat input, not a hardware specification"
-              }
-            }
-          ]
-        },
-        "actions": {
-          "mode_id": "d",
-          "pointing": "ground_station"
-        }
-      },
-      {
-        "condition": {
-          "all": [
-            {
-              "field": "in_eclipse",
-              "op": "==",
-              "value": true
-            },
-            {
-              "field": "queue_bytes",
-              "queue_id": "raw",
-              "op": ">",
-              "value": {
-                "value": 0,
-                "unit": "byte",
-                "certainty": "guesstimate",
-                "note": "Synthetic illustrative CubeSat input, not a hardware specification"
-              }
-            }
-          ]
-        },
-        "actions": {
-          "mode_id": "c"
-        }
-      },
-      {
-        "condition": {
-          "all": [
-            {
-              "field": "in_eclipse",
-              "op": "==",
-              "value": false
-            },
-            {
-              "field": "battery_percent",
-              "op": ">",
-              "value": {
-                "value": 40,
-                "unit": "%",
-                "certainty": "guesstimate",
-                "note": "Synthetic illustrative CubeSat input, not a hardware specification"
-              }
-            },
-            {
-              "field": "storage_used_bytes",
-              "op": "<",
-              "value": {
-                "value": 800000000,
-                "unit": "byte",
-                "certainty": "guesstimate",
-                "note": "Synthetic illustrative CubeSat input, not a hardware specification"
-              }
-            }
-          ]
-        },
-        "actions": {
-          "mode_id": "b"
+    "type": "none"
+  },
+  "states": [
+    {
+      "id": "a",
+      "label": "Idle",
+      "default_pointing": "sun"
+    },
+    {
+      "id": "b",
+      "label": "Capturing data",
+      "default_pointing": "nadir"
+    },
+    {
+      "id": "c",
+      "label": "Transmit/receive",
+      "default_pointing": "ground_station"
+    },
+    {
+      "id": "d",
+      "label": "Survival",
+      "default_pointing": "sun"
+    }
+  ],
+  "electrical_bus": {
+    "voltage_v": {
+      "value": 5,
+      "unit": "V",
+      "certainty": "guesstimate",
+      "note": "Synthetic illustrative input; not a hardware specification"
+    }
+  },
+  "transitions": [
+    {
+      "id": "low_battery",
+      "source_state_id": "a",
+      "target_state_id": "d",
+      "priority": 0,
+      "condition": {
+        "field": "battery_percent",
+        "op": "<",
+        "value": {
+          "value": 20,
+          "unit": "%",
+          "certainty": "guesstimate",
+          "note": "Synthetic illustrative input; not a hardware specification"
         }
       }
-    ],
-    "fallback": {
-      "mode_id": "a"
     }
-  }
+  ]
 }

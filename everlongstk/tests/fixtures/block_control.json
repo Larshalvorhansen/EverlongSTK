@@ -1,0 +1,108 @@
+{
+  "type": "blocks",
+  "rules": [
+    {
+      "condition": {
+        "field": "battery_percent",
+        "op": "<",
+        "value": {
+          "value": 20,
+          "unit": "%",
+          "certainty": "guesstimate",
+          "note": "Synthetic illustrative CubeSat input, not a hardware specification"
+        }
+      },
+      "actions": {
+        "mode_id": "a"
+      }
+    },
+    {
+      "condition": {
+        "all": [
+          {
+            "field": "ground_station_visible",
+            "op": "==",
+            "value": true
+          },
+          {
+            "field": "queue_bytes",
+            "queue_id": "processed",
+            "op": ">",
+            "value": {
+              "value": 0,
+              "unit": "byte",
+              "certainty": "guesstimate",
+              "note": "Synthetic illustrative CubeSat input, not a hardware specification"
+            }
+          }
+        ]
+      },
+      "actions": {
+        "mode_id": "d",
+        "pointing": "ground_station"
+      }
+    },
+    {
+      "condition": {
+        "all": [
+          {
+            "field": "in_eclipse",
+            "op": "==",
+            "value": true
+          },
+          {
+            "field": "queue_bytes",
+            "queue_id": "raw",
+            "op": ">",
+            "value": {
+              "value": 0,
+              "unit": "byte",
+              "certainty": "guesstimate",
+              "note": "Synthetic illustrative CubeSat input, not a hardware specification"
+            }
+          }
+        ]
+      },
+      "actions": {
+        "mode_id": "c"
+      }
+    },
+    {
+      "condition": {
+        "all": [
+          {
+            "field": "in_eclipse",
+            "op": "==",
+            "value": false
+          },
+          {
+            "field": "battery_percent",
+            "op": ">",
+            "value": {
+              "value": 40,
+              "unit": "%",
+              "certainty": "guesstimate",
+              "note": "Synthetic illustrative CubeSat input, not a hardware specification"
+            }
+          },
+          {
+            "field": "storage_used_bytes",
+            "op": "<",
+            "value": {
+              "value": 800000000,
+              "unit": "byte",
+              "certainty": "guesstimate",
+              "note": "Synthetic illustrative CubeSat input, not a hardware specification"
+            }
+          }
+        ]
+      },
+      "actions": {
+        "mode_id": "b"
+      }
+    }
+  ],
+  "fallback": {
+    "mode_id": "a"
+  }
+}
